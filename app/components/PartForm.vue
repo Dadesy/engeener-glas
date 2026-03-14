@@ -135,10 +135,21 @@ function validate(): boolean {
     error.value = 'Количество — целое число ≥ 1'
     return false
   }
-  if (w > sheet.value.width || h > sheet.value.height) {
-    error.value = `Деталь ${w}×${h} мм не вписывается в лист ${sheet.value.width}×${sheet.value.height} мм`
+
+  const sw = sheet.value.width
+  const sh = sheet.value.height
+
+  if (w > sw || h > sh) {
+    // Check if rotating helps
+    const rotatedFits = h <= sw && w <= sh
+    if (rotatedFits) {
+      error.value = `Деталь ${w}×${h} не влезает, но повёрнутая ${h}×${w} — влезет. Поменяйте ширину и высоту местами.`
+    } else {
+      error.value = `Деталь ${w}×${h} мм не вписывается в лист ${sw}×${sh} мм`
+    }
     return false
   }
+
   error.value = ''
   return true
 }

@@ -29,12 +29,15 @@ const parts = ref<GlassPart[]>([])
 const editTarget = ref<GlassPart | null>(null)
 
 export function useGlassStore() {
+  // ── Sheet area ──────────────────────────────────────────────────
   const totalArea = computed(() => sheet.value.width * sheet.value.height)
 
+  // ── Requested parts area (what user wants to cut) ───────────────
   const partsArea = computed(() =>
     parts.value.reduce((sum, p) => sum + p.width * p.height * p.quantity, 0)
   )
 
+  // Diff between sheet and what's requested (can be negative = over-requested)
   const remainderArea = computed(() => totalArea.value - partsArea.value)
 
   const utilizationPct = computed(() =>
@@ -43,11 +46,9 @@ export function useGlassStore() {
       : 0
   )
 
-  /**
-   * Row-based shelf packing.
-   * Iterates all piece instances left→right, top→bottom.
-   * Starts new row when piece doesn't fit horizontally.
-   */
+  // ── Packing: row-based shelf algorithm ─────────────────────────
+  // Iterates all piece instances left→right, top→bottom.
+  // Starts a new row when a piece doesn't fit horizontally.
   const placedPieces = computed<PlacedPiece[]>(() => {
     const result: PlacedPiece[] = []
     let x = 0
@@ -58,7 +59,7 @@ export function useGlassStore() {
 
     parts.value.forEach((part, colorIndex) => {
       for (let i = 0; i < part.quantity; i++) {
-        // Part too big to fit sheet even alone — skip
+        // Physically doesn't fit — skip
         if (part.width > sw || part.height > sh) continue
 
         // Doesn't fit in current row → start new row
@@ -68,7 +69,7 @@ export function useGlassStore() {
           rowH = 0
         }
 
-        // No vertical space left — stop placing this part
+        // No vertical space left
         if (y + part.height > sh) continue
 
         result.push({
@@ -89,6 +90,64 @@ export function useGlassStore() {
     return result
   })
 
+  // ── Placement statistics ────────────────────────────────────────
+
+  /** How many pieces of each part were actually placed { partId → count } */
+  const partPlacedCounts = computed((): Record<string, number> => {
+    const counts: Record<string, number> = {}
+    for (const piece of placedPieces.value) {
+      counts[piece.partId] = (counts[piece.partId] ?? 0) + 1
+    }
+    return counts
+  })
+
+  /** Total pieces requested across all parts */
+  const totalRequested = computed(() =>
+    parts.value.reduce((s, p) => s + p.quantity, 0)
+  )
+
+  /** Total pieces actually placed on the sheet */
+  const totalPlaced = computed(() => placedPieces.value.length)
+
+  /** Pieces that couldn't be placed (due to size or no space) */
+  const totalUnplaced = computed(() => totalRequested.value - totalPlaced.value)
+
+  /** Area of pieces that were actually placed (≤ partsArea) */
+  const placedArea = computed(() =>
+    placedPieces.value.reduce((s, p) => s + p.w * p.h, 0)
+  )
+
+  /** Actual empty glass area remaining on the sheet */
+  const sheetRemainder = computed(() => totalArea.value - placedArea.value)
+
+  /** % of sheet covered by placed pieces */
+  const placedPct = computed(() =>
+    totalArea.value > 0
+      ? Math.round((placedArea.value / totalArea.value) * 100)
+      : 0
+  )
+
+  /** Part IDs that are physically too large to ever fit the sheet */
+  const oversizedPartIds = computed(() =>
+    new Set(
+      parts.value
+        .filter(p => p.width > sheet.value.width || p.height > sheet.value.height)
+        .map(p => p.id)
+    )
+  )
+
+  // ── Helpers ─────────────────────────────────────────────────────
+
+  /**
+   * Returns true if a part that doesn't fit in its current orientation
+   * would fit if rotated 90°.
+   */
+  function canFitRotated(part: GlassPart): boolean {
+    const { width: sw, height: sh } = sheet.value
+    const fits = (w: number, h: number) => w <= sw && h <= sh
+    return !fits(part.width, part.height) && fits(part.height, part.width)
+  }
+
   function addPart(data: Omit<GlassPart, 'id'>) {
     parts.value.push({ ...data, id: Date.now().toString() })
   }
@@ -108,14 +167,29 @@ export function useGlassStore() {
   }
 
   return {
+    // state
     sheet,
     parts,
     editTarget,
+    // area
     totalArea,
     partsArea,
     remainderArea,
+    placedArea,
+    sheetRemainder,
+    // pct
     utilizationPct,
+    placedPct,
+    // pieces
+    totalRequested,
+    totalPlaced,
+    totalUnplaced,
+    // packing
     placedPieces,
+    partPlacedCounts,
+    oversizedPartIds,
+    // helpers
+    canFitRotated,
     addPart,
     updatePart,
     deletePart,
