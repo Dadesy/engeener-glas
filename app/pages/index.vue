@@ -9,8 +9,8 @@
             <line x1="12" y1="9" x2="12" y2="21" />
           </svg>
           <div>
-            <div class="header-title">Раскрой онлайн</div>
-            <div class="header-sub">Оптимальный раскрой листовых материалов</div>
+            <div class="header-title">КройМастер</div>
+            <div class="header-sub">Раскрой листовых материалов — прямоугольники и фигуры</div>
           </div>
         </div>
       </div>
@@ -34,15 +34,15 @@
     <InfoSection />
 
     <footer class="site-footer">
-      <p>© 2025 Раскрой онлайн — бесплатный калькулятор раскроя листовых материалов</p>
+      <p>© 2025 КройМастер — бесплатный калькулятор раскроя листовых материалов и произвольных фигур</p>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-const title = 'Раскрой онлайн — калькулятор оптимального раскроя листовых материалов бесплатно'
-const description = 'Бесплатный онлайн-калькулятор раскроя стекла, металла, дерева и пластика. Автоматическое размещение деталей на листе с минимальными отходами, схема и таблица кроя.'
-const url = 'https://raskroy.online'
+const title = 'КройМастер — бесплатный онлайн-раскрой листовых материалов: прямоугольники и произвольные фигуры'
+const description = 'Бесплатный онлайн-калькулятор раскроя стекла, металла, дерева и ДСП. Поддержка прямоугольных деталей и произвольных многоугольников. Алгоритм MaxRects, учёт пропила, экспорт в SVG, ручная корректировка.'
+const url = 'https://kroymaster.ru'
 
 useSeoMeta({
   title,
@@ -58,7 +58,7 @@ useSeoMeta({
   twitterTitle: title,
   twitterDescription: description,
   robots: 'index, follow, max-snippet:-1, max-image-preview:large, max-video-preview:-1',
-  keywords: 'раскрой стекла, раскрой онлайн, калькулятор раскроя, раскрой металла, раскрой фанеры, раскрой ДСП, оптимизация раскроя, нарезка листового материала, раскрой МДФ, программа раскроя',
+  keywords: 'раскрой онлайн, калькулятор раскроя, раскрой стекла, раскрой металла, раскрой фанеры, раскрой ДСП, раскрой МДФ, оптимизация раскроя, нарезка листового материала, раскрой произвольных фигур, раскрой многоугольников, нестандартные детали раскрой, фигурный раскрой, программа раскроя, кроймастер',
 })
 
 useHead({
@@ -73,13 +73,13 @@ useHead({
     { name: 'theme-color', content: '#2563EB' },
     { name: 'apple-mobile-web-app-capable', content: 'yes' },
     { name: 'apple-mobile-web-app-status-bar-style', content: 'default' },
-    { name: 'apple-mobile-web-app-title', content: 'Раскрой онлайн' },
-    { name: 'application-name', content: 'Раскрой онлайн' },
-    { name: 'author', content: 'Раскрой онлайн' },
+    { name: 'apple-mobile-web-app-title', content: 'КройМастер' },
+    { name: 'application-name', content: 'КройМастер' },
+    { name: 'author', content: 'КройМастер' },
     { name: 'geo.region', content: 'RU' },
     { name: 'geo.placename', content: 'Россия' },
     { property: 'og:locale', content: 'ru_RU' },
-    { property: 'og:site_name', content: 'Раскрой онлайн' },
+    { property: 'og:site_name', content: 'КройМастер' },
   ],
   script: [
     {
@@ -87,7 +87,7 @@ useHead({
       innerHTML: JSON.stringify({
         '@context': 'https://schema.org',
         '@type': 'WebApplication',
-        name: 'Раскрой онлайн',
+        name: 'КройМастер',
         url,
         description,
         applicationCategory: 'UtilitiesApplication',
@@ -98,6 +98,10 @@ useHead({
         offers: { '@type': 'Offer', price: '0', priceCurrency: 'RUB' },
         featureList: [
           'Алгоритм оптимального размещения MaxRects',
+          'Поддержка прямоугольных деталей',
+          'Поддержка произвольных многоугольников и фигур',
+          'Редактор произвольных фигур с сеткой',
+          'Готовые шаблоны фигур: треугольник, трапеция, L-образная, T-образная',
           'Поддержка поворота деталей',
           'Учёт пропила',
           'Ручная корректировка расположения',
@@ -324,5 +328,32 @@ body {
   color: #94A3B8;
   max-width: 1320px;
   margin: 0 auto;
+}
+
+/* ─── Print ───────────────────────────────────────────────────────── */
+@media print {
+  .header,
+  .sidebar,
+  .site-footer,
+  section[class*="info"],
+  .info-section { display: none !important; }
+
+  body { background: white; }
+
+  .layout {
+    display: block;
+    padding: 0;
+    max-width: 100%;
+  }
+
+  .content {
+    display: block;
+  }
+
+  .card {
+    box-shadow: none;
+    border: 1px solid #E2E8F0;
+    break-inside: avoid;
+  }
 }
 </style>

@@ -1,43 +1,50 @@
 <template>
   <div class="card">
-    <!-- Header with toggle -->
     <button class="card-header" type="button" @click="open = !open">
       <p class="card-title" style="margin-bottom: 0;">Таблица кроя</p>
       <span class="header-meta">
-        <span v-if="placedPieces.length > 0" class="count-badge">{{ placedPieces.length }} шт.</span>
+        <span v-if="allPlacedPieces.length > 0" class="count-badge">{{ allPlacedPieces.length }} шт.</span>
+        <span v-if="sheetsCount > 1" class="sheets-badge">{{ sheetsCount }} листа</span>
         <span class="chevron" :class="{ rotated: open }">▾</span>
       </span>
     </button>
 
     <template v-if="open">
-      <div v-if="placedPieces.length === 0" class="empty">
+      <div v-if="allPlacedPieces.length === 0" class="empty">
         Нет размещённых деталей
       </div>
 
       <template v-else>
-        <!-- Table -->
-        <div class="table-wrap">
+        <!-- Multi-sheet: grouped by sheet -->
+        <template v-if="sheetsCount > 1">
+          <div v-for="(sheetGroup, si) in sheetGroups" :key="si" class="sheet-group">
+            <div class="sheet-group-header">Лист {{ si + 1 }} — {{ sheetGroup.length }} шт.</div>
+            <div class="table-wrap">
+              <table class="table">
+                <thead><tr><th>#</th><th>Название</th><th>Ш × В, мм</th><th>X, мм</th><th>Y, мм</th><th>↻</th></tr></thead>
+                <tbody>
+                  <tr v-for="(piece, idx) in sheetGroup" :key="piece.instanceId">
+                    <td class="td-num">{{ idx + 1 }}</td>
+                    <td><span class="dot" :style="{ background: PART_COLORS[piece.colorIndex] }" />{{ piece.label || 'Деталь' }}</td>
+                    <td class="td-dims">{{ piece.w }}&thinsp;×&thinsp;{{ piece.h }}</td>
+                    <td class="td-coord">{{ piece.x }}</td>
+                    <td class="td-coord">{{ piece.y }}</td>
+                    <td class="td-rot">{{ piece.rotated ? '↻' : '—' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </template>
+
+        <!-- Single sheet: flat table -->
+        <div v-else class="table-wrap">
           <table class="table">
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Название</th>
-                <th>Ш × В, мм</th>
-                <th>X, мм</th>
-                <th>Y, мм</th>
-                <th>↻</th>
-              </tr>
-            </thead>
+            <thead><tr><th>#</th><th>Название</th><th>Ш × В, мм</th><th>X, мм</th><th>Y, мм</th><th>↻</th></tr></thead>
             <tbody>
-              <tr
-                v-for="(piece, idx) in placedPieces"
-                :key="piece.instanceId"
-              >
+              <tr v-for="(piece, idx) in allPlacedPieces" :key="piece.instanceId">
                 <td class="td-num">{{ idx + 1 }}</td>
-                <td>
-                  <span class="dot" :style="{ background: PART_COLORS[piece.colorIndex] }" />
-                  {{ piece.label || `Деталь` }}
-                </td>
+                <td><span class="dot" :style="{ background: PART_COLORS[piece.colorIndex] }" />{{ piece.label || 'Деталь' }}</td>
                 <td class="td-dims">{{ piece.w }}&thinsp;×&thinsp;{{ piece.h }}</td>
                 <td class="td-coord">{{ piece.x }}</td>
                 <td class="td-coord">{{ piece.y }}</td>
@@ -47,7 +54,6 @@
           </table>
         </div>
 
-        <!-- Copy button -->
         <button class="copy-btn" type="button" @click="copyToClipboard">
           {{ copied ? '✓ Скопировано' : '📋 Копировать список' }}
         </button>
@@ -57,20 +63,40 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useGlassStore, PART_COLORS } from '~/composables/useGlassStore'
 
-const { placedPieces } = useGlassStore()
+const { allPlacedPieces, sheetsCount } = useGlassStore()
 
 const open = ref(false)
 const copied = ref(false)
 
+// Group pieces by sheetIndex
+const sheetGroups = computed(() => {
+  const groups: (typeof allPlacedPieces.value)[] = []
+  for (const piece of allPlacedPieces.value) {
+    const si = piece.sheetIndex ?? 0
+    if (!groups[si]) groups[si] = []
+    groups[si].push(piece)
+  }
+  return groups
+})
+
 function copyToClipboard() {
-  const header = '#\tНазвание\tШирина\tВысота\tX\tY\tПовёрнута'
-  const rows = placedPieces.value.map((p, i) =>
-    `${i + 1}\t${p.label}\t${p.w}\t${p.h}\t${p.x}\t${p.y}\t${p.rotated ? 'да' : 'нет'}`,
-  )
-  navigator.clipboard.writeText([header, ...rows].join('\n')).then(() => {
+  const lines: string[] = []
+  if (sheetsCount.value > 1) {
+    sheetGroups.value.forEach((group, si) => {
+      lines.push(`=== Лист ${si + 1} ===`)
+      lines.push('#\tНазвание\tШирина\tВысота\tX\tY\tПовёрнута')
+      group.forEach((p, i) => lines.push(`${i + 1}\t${p.label}\t${p.w}\t${p.h}\t${p.x}\t${p.y}\t${p.rotated ? 'да' : 'нет'}`))
+    })
+  } else {
+    lines.push('#\tНазвание\tШирина\tВысота\tX\tY\tПовёрнута')
+    allPlacedPieces.value.forEach((p, i) =>
+      lines.push(`${i + 1}\t${p.label}\t${p.w}\t${p.h}\t${p.x}\t${p.y}\t${p.rotated ? 'да' : 'нет'}`),
+    )
+  }
+  navigator.clipboard.writeText(lines.join('\n')).then(() => {
     copied.value = true
     setTimeout(() => { copied.value = false }, 2000)
   })
@@ -87,14 +113,13 @@ function copyToClipboard() {
   border: none;
   cursor: pointer;
   padding: 0;
-  margin-bottom: 0;
   text-align: left;
 }
 
 .header-meta {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -107,22 +132,47 @@ function copyToClipboard() {
   border-radius: 99px;
 }
 
+.sheets-badge {
+  font-size: 11px;
+  font-weight: 700;
+  background: #F0FDF4;
+  color: #065F46;
+  padding: 2px 8px;
+  border-radius: 99px;
+}
+
 .chevron {
   font-size: 18px;
   color: #94A3B8;
   transition: transform 0.2s;
-  line-height: 1;
 }
 
 .chevron.rotated { transform: rotate(180deg); }
 
+/* Sheet groups */
+.sheet-group { margin-top: 14px; }
+
+.sheet-group:first-child { margin-top: 12px; }
+
+.sheet-group-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: #2563EB;
+  background: #EFF6FF;
+  padding: 5px 10px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+}
+
 /* Table */
 .table-wrap {
   overflow-x: auto;
-  margin-top: 12px;
   border-radius: 10px;
   border: 1px solid #F1F5F9;
+  margin-top: 12px;
 }
+
+.sheet-group .table-wrap { margin-top: 0; }
 
 .table {
   width: 100%;
@@ -130,9 +180,7 @@ function copyToClipboard() {
   font-size: 13px;
 }
 
-.table thead tr {
-  background: #F8FAFC;
-}
+.table thead tr { background: #F8FAFC; }
 
 .table th {
   padding: 8px 10px;
@@ -168,10 +216,8 @@ function copyToClipboard() {
   border-radius: 50%;
   margin-right: 5px;
   vertical-align: middle;
-  flex-shrink: 0;
 }
 
-/* Copy button */
 .copy-btn {
   margin-top: 10px;
   width: 100%;

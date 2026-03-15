@@ -6,6 +6,7 @@ export interface GlassPart {
   width: number
   height: number
   quantity: number
+  points?: { x: number; y: number }[]  // normalized 0–1 relative to bbox; absent = rectangle
 }
 
 export interface PlacedPiece {
@@ -18,6 +19,8 @@ export interface PlacedPiece {
   h: number
   colorIndex: number
   rotated: boolean
+  sheetIndex: number   // which sheet this piece belongs to
+  points?: { x: number; y: number }[]  // normalized 0–1; absent = rectangle
 }
 
 export interface FreeRect {
@@ -29,17 +32,74 @@ export const PART_COLORS = [
   '#8B5CF6', '#EC4899', '#14B8A6', '#F97316',
 ]
 
+export const SHEET_PRESETS = [
+  { label: '1000×2000', w: 1000, h: 2000 },
+  { label: '1220×2440', w: 1220, h: 2440 },
+  { label: '1500×3000', w: 1500, h: 3000 },
+  { label: '2000×3000', w: 2000, h: 3000 },
+  { label: '600×2000',  w: 600,  h: 2000 },
+]
+
+export const SHAPE_PRESETS = [
+  {
+    label: 'Прям. треугольник',
+    icon: '◺',
+    points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }],
+  },
+  {
+    label: 'Равн. треугольник',
+    icon: '△',
+    points: [{ x: 0.5, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }],
+  },
+  {
+    label: 'Трапеция',
+    icon: '⏢',
+    points: [{ x: 0.2, y: 0 }, { x: 0.8, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }],
+  },
+  {
+    label: 'Параллелограмм',
+    icon: '▱',
+    points: [{ x: 0.25, y: 0 }, { x: 1, y: 0 }, { x: 0.75, y: 1 }, { x: 0, y: 1 }],
+  },
+  {
+    label: 'L-образная',
+    icon: '⌐',
+    points: [
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0.45 },
+      { x: 0.45, y: 0.45 }, { x: 0.45, y: 1 }, { x: 0, y: 1 },
+    ],
+  },
+  {
+    label: 'T-образная',
+    icon: 'T',
+    points: [
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0.35 },
+      { x: 0.65, y: 0.35 }, { x: 0.65, y: 1 },
+      { x: 0.35, y: 1 }, { x: 0.35, y: 0.35 }, { x: 0, y: 0.35 },
+    ],
+  },
+]
+
 // ── MaxRects 2D Bin Packing ─────────────────────────────────────────────────
 interface Rect { x: number; y: number; w: number; h: number }
+
+type PackPiece = {
+  instanceId: string; partId: string; label: string
+  w: number; h: number; colorIndex: number; area: number
+  points?: { x: number; y: number }[]
+}
+
+function rotatePoints(pts: { x: number; y: number }[]): { x: number; y: number }[] {
+  // 90° CW rotation in normalized space: (x, y) → (y, 1 - x)
+  return pts.map(p => ({ x: p.y, y: 1 - p.x }))
+}
 
 function maxRectsPack(
   sheetW: number,
   sheetH: number,
-  pieces: Array<{
-    instanceId: string; partId: string; label: string
-    w: number; h: number; colorIndex: number
-  }>,
+  pieces: PackPiece[],
   kerf = 0,
+  sheetIndex = 0,
 ): { placed: PlacedPiece[]; free: Rect[] } {
   const placed: PlacedPiece[] = []
   let free: Rect[] = [{ x: 0, y: 0, w: sheetW, h: sheetH }]
@@ -47,17 +107,28 @@ function maxRectsPack(
   for (const piece of pieces) {
     type Candidate = {
       freeIdx: number; x: number; y: number
-      w: number; h: number
-      bw: number; bh: number
+      w: number; h: number; bw: number; bh: number
       rotated: boolean; score: number
+      points?: { x: number; y: number }[]
     }
     let best: Candidate | null = null
 
-    const orientations = [
-      { w: piece.w, h: piece.h, bw: piece.w + kerf, bh: piece.h + kerf, rotated: false },
-      ...(piece.w !== piece.h
-        ? [{ w: piece.h, h: piece.w, bw: piece.h + kerf, bh: piece.w + kerf, rotated: true }]
-        : []),
+    const orientations: Array<{
+      w: number; h: number; bw: number; bh: number; rotated: boolean
+      points?: { x: number; y: number }[]
+    }> = [
+      {
+        w: piece.w, h: piece.h,
+        bw: piece.w + kerf, bh: piece.h + kerf,
+        rotated: false,
+        points: piece.points,
+      },
+      ...(piece.w !== piece.h ? [{
+        w: piece.h, h: piece.w,
+        bw: piece.h + kerf, bh: piece.w + kerf,
+        rotated: true,
+        points: piece.points ? rotatePoints(piece.points) : undefined,
+      }] : []),
     ]
 
     for (let fi = 0; fi < free.length; fi++) {
@@ -80,10 +151,11 @@ function maxRectsPack(
       w: best.w, h: best.h,
       colorIndex: piece.colorIndex,
       rotated: best.rotated,
+      sheetIndex,
+      points: best.points,
     })
 
     const block: Rect = { x: best.x, y: best.y, w: best.bw, h: best.bh }
-
     const nextFree: Rect[] = []
     for (const f of free) {
       if (!rectsIntersect(block, f)) { nextFree.push(f); continue }
@@ -144,11 +216,12 @@ const manualPlacements = ref<PlacedPiece[]>([])
 
 const showGaps = ref(false)
 const showPositions = ref(false)
+const currentSheetIndex = ref(0)
 
 let _initialized = false
 
 export function useGlassStore() {
-  // ── One-time client-side init ────────────────────────────────────
+  // ── One-time client init ─────────────────────────────────────────
   if (!_initialized && typeof window !== 'undefined') {
     _initialized = true
     const saved = loadState()
@@ -180,8 +253,8 @@ export function useGlassStore() {
       : 0,
   )
 
-  // ── Auto packing ─────────────────────────────────────────────────
-  const autoPackResult = computed(() => {
+  // ── Multi-sheet packing ───────────────────────────────────────────
+  const multiSheetResult = computed(() => {
     const sw = sheet.value.width
     const sh = sheet.value.height
     const kerf = kerfEnabled.value ? kerfSize.value : 0
@@ -189,10 +262,8 @@ export function useGlassStore() {
     const colorMap = new Map<string, number>()
     parts.value.forEach((p, i) => colorMap.set(p.id, i % PART_COLORS.length))
 
-    const expanded: Array<{
-      instanceId: string; partId: string; label: string
-      w: number; h: number; colorIndex: number; area: number
-    }> = []
+    // Build all piece instances
+    const allPieces: PackPiece[] = []
 
     for (const part of parts.value) {
       const fitsN = part.width <= sw && part.height <= sh
@@ -203,35 +274,70 @@ export function useGlassStore() {
       const colorIndex = colorMap.get(part.id) ?? 0
 
       for (let i = 0; i < part.quantity; i++) {
-        expanded.push({
+        allPieces.push({
           instanceId: `${part.id}-${i}`,
           partId: part.id, label,
           w: part.width, h: part.height,
           colorIndex,
           area: part.width * part.height,
+          points: part.points,
         })
       }
     }
 
-    expanded.sort((a, b) => b.area - a.area)
-    return maxRectsPack(sw, sh, expanded, kerf)
+    allPieces.sort((a, b) => b.area - a.area)
+
+    // Pack onto successive sheets until all placed or no progress
+    const sheets: { placed: PlacedPiece[]; free: Rect[] }[] = []
+    let remaining = [...allPieces]
+    const MAX_SHEETS = 20
+
+    while (remaining.length > 0 && sheets.length < MAX_SHEETS) {
+      const result = maxRectsPack(sw, sh, remaining, kerf, sheets.length)
+      if (result.placed.length === 0) break
+      sheets.push(result)
+      const placedIds = new Set(result.placed.map(p => p.instanceId))
+      remaining = remaining.filter(p => !placedIds.has(p.instanceId))
+    }
+
+    return { sheets, unplaceable: remaining }
   })
 
-  const autoPlacements = computed(() => autoPackResult.value.placed)
+  // Clamp currentSheetIndex when sheets count changes
+  watch(multiSheetResult, (r) => {
+    if (currentSheetIndex.value >= r.sheets.length && r.sheets.length > 0)
+      currentSheetIndex.value = r.sheets.length - 1
+  })
 
-  // Scrap/free rects: usable remainder areas (≥ 50×50 mm), largest first
+  const sheetsCount = computed(() => multiSheetResult.value.sheets.length)
+
+  // Current sheet pack (for visualization)
+  const currentSheetPack = computed(() =>
+    multiSheetResult.value.sheets[currentSheetIndex.value] ?? { placed: [], free: [] },
+  )
+
+  const autoPlacements = computed(() => currentSheetPack.value.placed)
+
   const freeRects = computed((): FreeRect[] => {
-    if (isManualMode.value || !autoPackResult.value.free.length) return []
-    return autoPackResult.value.free
+    if (isManualMode.value) return []
+    return currentSheetPack.value.free
       .filter(r => r.w >= 50 && r.h >= 50)
       .sort((a, b) => b.w * b.h - a.w * a.h)
   })
 
+  // All pieces across all sheets (for stats and cutting list)
+  const allPlacedPieces = computed<PlacedPiece[]>(() =>
+    isManualMode.value
+      ? manualPlacements.value
+      : multiSheetResult.value.sheets.flatMap(s => s.placed),
+  )
+
+  // placedPieces = current sheet only (for SVG rendering)
   const placedPieces = computed<PlacedPiece[]>(() =>
     isManualMode.value ? manualPlacements.value : autoPlacements.value,
   )
 
-  // ── Overlap detection (manual mode) ──────────────────────────────
+  // ── Overlap detection (manual) ────────────────────────────────────
   const overlappingInstanceIds = computed((): Set<string> => {
     if (!isManualMode.value) return new Set()
     const pieces = manualPlacements.value
@@ -239,10 +345,7 @@ export function useGlassStore() {
     for (let i = 0; i < pieces.length; i++) {
       for (let j = i + 1; j < pieces.length; j++) {
         const a = pieces[i], b = pieces[j]
-        if (
-          a.x < b.x + b.w && a.x + a.w > b.x &&
-          a.y < b.y + b.h && a.y + a.h > b.y
-        ) {
+        if (a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y) {
           result.add(a.instanceId)
           result.add(b.instanceId)
         }
@@ -276,26 +379,32 @@ export function useGlassStore() {
     ]
   }
 
-  // ── Placement stats ───────────────────────────────────────────────
+  // ── Placement stats (all sheets) ──────────────────────────────────
   const partPlacedCounts = computed((): Record<string, number> => {
     const counts: Record<string, number> = {}
-    for (const p of placedPieces.value)
+    for (const p of allPlacedPieces.value)
       counts[p.partId] = (counts[p.partId] ?? 0) + 1
     return counts
   })
 
-  const totalRequested = computed(() =>
-    parts.value.reduce((s, p) => s + p.quantity, 0),
+  const totalRequested = computed(() => parts.value.reduce((s, p) => s + p.quantity, 0))
+  const totalPlaced = computed(() => allPlacedPieces.value.length)
+  const totalUnplaced = computed(() =>
+    isManualMode.value
+      ? 0
+      : multiSheetResult.value.unplaceable.length + (totalRequested.value - totalPlaced.value - multiSheetResult.value.unplaceable.length),
   )
-  const totalPlaced = computed(() => placedPieces.value.length)
-  const totalUnplaced = computed(() => totalRequested.value - totalPlaced.value)
 
-  const placedArea = computed(() =>
-    placedPieces.value.reduce((s, p) => s + p.w * p.h, 0),
-  )
-  const sheetRemainder = computed(() => totalArea.value - placedArea.value)
+  // Total area across all sheets used
+  const totalSheetsArea = computed(() => totalArea.value * Math.max(1, sheetsCount.value))
+
+  const placedArea = computed(() => allPlacedPieces.value.reduce((s, p) => s + p.w * p.h, 0))
+
+  // Remainder = total material used minus placed area
+  const sheetRemainder = computed(() => totalSheetsArea.value - placedArea.value)
+
   const placedPct = computed(() =>
-    totalArea.value > 0 ? Math.round((placedArea.value / totalArea.value) * 100) : 0,
+    totalSheetsArea.value > 0 ? Math.round((placedArea.value / totalSheetsArea.value) * 100) : 0,
   )
 
   const oversizedPartIds = computed(() =>
@@ -314,6 +423,10 @@ export function useGlassStore() {
     const { width: sw, height: sh } = sheet.value
     const fits = (w: number, h: number) => w <= sw && h <= sh
     return !fits(part.width, part.height) && fits(part.height, part.width)
+  }
+
+  function applyPreset(w: number, h: number) {
+    sheet.value = { width: w, height: h }
   }
 
   function addPart(data: Omit<GlassPart, 'id'>) {
@@ -345,21 +458,20 @@ export function useGlassStore() {
 
   return {
     sheet, parts, editTarget,
-    // kerf
     kerfEnabled, kerfSize,
-    // manual mode
     isManualMode, enterManualMode, exitManualMode, movePiece,
     overlappingInstanceIds,
-    // UI toggles
     showGaps, showPositions,
-    // area
-    totalArea, partsArea, remainderArea, placedArea, sheetRemainder,
-    utilizationPct, placedPct,
+    // multi-sheet
+    sheetsCount, currentSheetIndex, multiSheetResult,
     // pieces
+    placedPieces, allPlacedPieces, freeRects,
+    partPlacedCounts, oversizedPartIds,
     totalRequested, totalPlaced, totalUnplaced,
-    placedPieces, partPlacedCounts, oversizedPartIds,
-    freeRects,
+    // area
+    totalArea, totalSheetsArea, partsArea, remainderArea,
+    placedArea, sheetRemainder, utilizationPct, placedPct,
     // helpers
-    canFitRotated, addPart, updatePart, deletePart, clearAll, partColorIndex,
+    canFitRotated, applyPreset, addPart, updatePart, deletePart, clearAll, partColorIndex,
   }
 }

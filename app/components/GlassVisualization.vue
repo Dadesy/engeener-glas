@@ -1,6 +1,20 @@
 <template>
   <div class="card">
-    <p class="card-title">Схема раскроя листа</p>
+    <!-- Header row: title + sheet tabs + print -->
+    <div class="viz-header">
+      <p class="card-title" style="margin-bottom:0;">Схема раскроя листа</p>
+      <div class="sheet-tabs" v-if="sheetsCount > 1">
+        <button
+          v-for="i in sheetsCount" :key="i"
+          class="sheet-tab"
+          :class="{ active: currentSheetIndex === i - 1 }"
+          type="button"
+          @click="currentSheetIndex = i - 1"
+        >{{ i }}</button>
+        <span class="sheet-label">из {{ sheetsCount }}</span>
+      </div>
+      <button class="icon-btn print-btn" type="button" @click="printSheet" title="Распечатать схему">🖨 Печать</button>
+    </div>
 
     <!-- Controls bar -->
     <div class="controls-bar">
@@ -146,59 +160,100 @@
           :key="piece.instanceId"
           :style="{ cursor: isManualMode ? (dragging?.instanceId === piece.instanceId ? 'grabbing' : 'grab') : 'default' }"
         >
-          <!-- Kerf dashed border -->
-          <rect
-            v-if="kerfEnabled"
-            :x="piece.x"
-            :y="piece.y"
-            :width="piece.w + kerfSize"
-            :height="piece.h + kerfSize"
-            fill="none"
-            stroke="#F59E0B"
-            :stroke-width="sw(2)"
-            stroke-dasharray="4 3"
-            opacity="0.6"
-            rx="2"
-            pointer-events="none"
-          />
+          <!-- ── POLYGON PIECE ── -->
+          <template v-if="piece.points && piece.points.length >= 3">
+            <!-- Kerf dashed border (scaled polygon) -->
+            <polygon
+              v-if="kerfEnabled"
+              :points="polyKerfPoints(piece)"
+              fill="none"
+              stroke="#F59E0B"
+              :stroke-width="sw(2)"
+              stroke-dasharray="4 3"
+              opacity="0.6"
+              pointer-events="none"
+            />
+            <!-- Shadow -->
+            <polygon
+              :points="polyOffsetPoints(piece, sw(6))"
+              :fill="PART_COLORS[piece.colorIndex]"
+              opacity="0.12"
+              pointer-events="none"
+            />
+            <!-- Fill (drag target) -->
+            <polygon
+              :points="polyPoints(piece)"
+              :fill="PART_COLORS[piece.colorIndex]"
+              :opacity="overlappingInstanceIds.has(piece.instanceId) ? 0.5 : 0.88"
+              :stroke="overlappingInstanceIds.has(piece.instanceId) ? '#EF4444' : PART_COLORS[piece.colorIndex]"
+              :stroke-width="sw(overlappingInstanceIds.has(piece.instanceId) ? 5 : 3)"
+              stroke-linejoin="round"
+              @pointerdown.prevent="startDrag($event, piece.instanceId)"
+            />
+            <!-- Overlap red tint -->
+            <polygon
+              v-if="overlappingInstanceIds.has(piece.instanceId)"
+              :points="polyPoints(piece)"
+              fill="#EF4444"
+              opacity="0.2"
+              pointer-events="none"
+            />
+          </template>
 
-          <!-- Shadow -->
-          <rect
-            :x="piece.x + sw(8)"
-            :y="piece.y + sw(8)"
-            :width="piece.w - sw(4)"
-            :height="piece.h - sw(4)"
-            :fill="PART_COLORS[piece.colorIndex]"
-            opacity="0.15"
-            rx="4"
-            pointer-events="none"
-          />
-          <!-- Fill (drag target) -->
-          <rect
-            :x="piece.x + sw(3)"
-            :y="piece.y + sw(3)"
-            :width="piece.w - sw(6)"
-            :height="piece.h - sw(6)"
-            :fill="PART_COLORS[piece.colorIndex]"
-            :opacity="overlappingInstanceIds.has(piece.instanceId) ? 0.5 : 0.85"
-            :stroke="overlappingInstanceIds.has(piece.instanceId) ? '#EF4444' : PART_COLORS[piece.colorIndex]"
-            :stroke-width="sw(overlappingInstanceIds.has(piece.instanceId) ? 5 : 3)"
-            rx="4"
-            @pointerdown.prevent="startDrag($event, piece.instanceId)"
-          />
-
-          <!-- Overlap red tint -->
-          <rect
-            v-if="overlappingInstanceIds.has(piece.instanceId)"
-            :x="piece.x + sw(3)"
-            :y="piece.y + sw(3)"
-            :width="piece.w - sw(6)"
-            :height="piece.h - sw(6)"
-            fill="#EF4444"
-            opacity="0.2"
-            rx="4"
-            pointer-events="none"
-          />
+          <!-- ── RECTANGLE PIECE ── -->
+          <template v-else>
+            <!-- Kerf dashed border -->
+            <rect
+              v-if="kerfEnabled"
+              :x="piece.x"
+              :y="piece.y"
+              :width="piece.w + kerfSize"
+              :height="piece.h + kerfSize"
+              fill="none"
+              stroke="#F59E0B"
+              :stroke-width="sw(2)"
+              stroke-dasharray="4 3"
+              opacity="0.6"
+              rx="2"
+              pointer-events="none"
+            />
+            <!-- Shadow -->
+            <rect
+              :x="piece.x + sw(8)"
+              :y="piece.y + sw(8)"
+              :width="piece.w - sw(4)"
+              :height="piece.h - sw(4)"
+              :fill="PART_COLORS[piece.colorIndex]"
+              opacity="0.15"
+              rx="1"
+              pointer-events="none"
+            />
+            <!-- Fill (drag target) -->
+            <rect
+              :x="piece.x + sw(3)"
+              :y="piece.y + sw(3)"
+              :width="piece.w - sw(6)"
+              :height="piece.h - sw(6)"
+              :fill="PART_COLORS[piece.colorIndex]"
+              :opacity="overlappingInstanceIds.has(piece.instanceId) ? 0.5 : 0.85"
+              :stroke="overlappingInstanceIds.has(piece.instanceId) ? '#EF4444' : PART_COLORS[piece.colorIndex]"
+              :stroke-width="sw(overlappingInstanceIds.has(piece.instanceId) ? 5 : 3)"
+              rx="1"
+              @pointerdown.prevent="startDrag($event, piece.instanceId)"
+            />
+            <!-- Overlap red tint -->
+            <rect
+              v-if="overlappingInstanceIds.has(piece.instanceId)"
+              :x="piece.x + sw(3)"
+              :y="piece.y + sw(3)"
+              :width="piece.w - sw(6)"
+              :height="piece.h - sw(6)"
+              fill="#EF4444"
+              opacity="0.2"
+              rx="1"
+              pointer-events="none"
+            />
+          </template>
 
           <!-- Label -->
           <text
@@ -273,7 +328,10 @@
     </div>
 
     <p v-if="totalUnplaced > 0" class="warn">
-      ⚠️ {{ totalUnplaced }} шт. не разместились — не хватает места на листе
+      ⚠️ {{ totalUnplaced }} шт. не вписываются в лист (слишком большие)
+    </p>
+    <p v-if="!isManualMode && sheetsCount > 1" class="info-sheets">
+      📋 Раскрой занимает {{ sheetsCount }} листа — используйте вкладки выше для навигации
     </p>
   </div>
 </template>
@@ -289,7 +347,44 @@ const {
   overlappingInstanceIds,
   showGaps, showPositions,
   freeRects,
+  sheetsCount, currentSheetIndex,
 } = useGlassStore()
+
+function printSheet() {
+  window.print()
+}
+
+// ── Polygon helpers ───────────────────────────────────────────────────────────
+import type { PlacedPiece as PlacedPieceType } from '~/composables/useGlassStore'
+
+function polyPoints(piece: PlacedPieceType): string {
+  return piece.points!
+    .map(p => `${piece.x + p.x * piece.w},${piece.y + p.y * piece.h}`)
+    .join(' ')
+}
+
+// Shadow: shift all points by +offset in both axes
+function polyOffsetPoints(piece: PlacedPieceType, offset: number): string {
+  return piece.points!
+    .map(p => `${piece.x + p.x * piece.w + offset},${piece.y + p.y * piece.h + offset}`)
+    .join(' ')
+}
+
+// Kerf: expand polygon slightly beyond bounding box center
+function polyKerfPoints(piece: PlacedPieceType): string {
+  const cx = piece.x + piece.w / 2
+  const cy = piece.y + piece.h / 2
+  const expand = (kerfSize.value / 2)
+  return piece.points!.map(p => {
+    const ax = piece.x + p.x * piece.w
+    const ay = piece.y + p.y * piece.h
+    // push outward from centroid
+    const dx = ax - cx
+    const dy = ay - cy
+    const len = Math.sqrt(dx * dx + dy * dy) || 1
+    return `${ax + (dx / len) * expand},${ay + (dy / len) * expand}`
+  }).join(' ')
+}
 
 const wrapRef = ref<HTMLElement | null>(null)
 const svgRef = ref<SVGSVGElement | null>(null)
@@ -407,6 +502,60 @@ onUnmounted(() => ro?.disconnect())
 </script>
 
 <style scoped>
+/* Viz header */
+.viz-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+/* Sheet tabs */
+.sheet-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.sheet-tab {
+  width: 30px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1.5px solid #E2E8F0;
+  background: #F8FAFC;
+  color: #64748B;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.sheet-tab.active {
+  background: #2563EB;
+  border-color: #2563EB;
+  color: white;
+}
+
+.sheet-label {
+  font-size: 12px;
+  color: #94A3B8;
+  white-space: nowrap;
+}
+
+.print-btn { margin-left: auto; }
+
+/* Info note */
+.info-sheets {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #2563EB;
+  background: #EFF6FF;
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+
 .controls-bar {
   display: flex;
   align-items: center;

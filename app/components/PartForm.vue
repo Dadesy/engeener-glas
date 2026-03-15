@@ -4,6 +4,40 @@
       {{ editTarget ? 'Редактировать деталь' : 'Добавить деталь для раскроя' }}
     </p>
 
+    <!-- Shape type toggle -->
+    <div class="shape-toggle">
+      <button
+        type="button"
+        class="shape-btn"
+        :class="{ active: shapeType === 'rectangle' }"
+        @click="setShapeType('rectangle')"
+      >⬜ Прямоугольник</button>
+      <button
+        type="button"
+        class="shape-btn"
+        :class="{ active: shapeType === 'polygon' }"
+        @click="setShapeType('polygon')"
+      >⬟ Фигура</button>
+    </div>
+
+    <!-- Polygon: preset chips -->
+    <template v-if="shapeType === 'polygon'">
+      <div class="presets-label">Быстрые шаблоны</div>
+      <div class="shape-presets">
+        <button
+          v-for="preset in SHAPE_PRESETS"
+          :key="preset.label"
+          type="button"
+          class="preset-chip"
+          :class="{ active: isActivePreset(preset.points) }"
+          @click="applyShapePreset(preset.points)"
+        >
+          <span class="preset-icon">{{ preset.icon }}</span>
+          {{ preset.label }}
+        </button>
+      </div>
+    </template>
+
     <!-- Label -->
     <div class="field">
       <label class="field-label" for="part-label">Название (необязательно)</label>
@@ -17,10 +51,12 @@
       />
     </div>
 
-    <!-- Width + Height -->
+    <!-- Width + Height (bounding box) -->
     <div class="two-col">
       <div class="field">
-        <label class="field-label" for="part-w">Ширина (мм)</label>
+        <label class="field-label" for="part-w">
+          {{ shapeType === 'polygon' ? 'Ширина габарита (мм)' : 'Ширина (мм)' }}
+        </label>
         <input
           id="part-w"
           v-model.number="form.width"
@@ -32,7 +68,9 @@
         />
       </div>
       <div class="field">
-        <label class="field-label" for="part-h">Высота (мм)</label>
+        <label class="field-label" for="part-h">
+          {{ shapeType === 'polygon' ? 'Высота габарита (мм)' : 'Высота (мм)' }}
+        </label>
         <input
           id="part-h"
           v-model.number="form.height"
@@ -45,8 +83,19 @@
       </div>
     </div>
 
+    <!-- Polygon editor -->
+    <template v-if="shapeType === 'polygon'">
+      <ShapeEditor
+        :points="form.points"
+        @update:points="form.points = $event"
+      />
+      <p class="field-hint">
+        Нарисуйте контур фигуры. Ширина и высота задают масштаб.
+      </p>
+    </template>
+
     <!-- Quantity stepper -->
-    <div class="field">
+    <div class="field" style="margin-top: 12px;">
       <label class="field-label">Количество</label>
       <div class="qty-row">
         <button class="qty-btn" type="button" @click="dec" aria-label="Уменьшить">
@@ -85,19 +134,36 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, nextTick } from 'vue'
-import { useGlassStore } from '~/composables/useGlassStore'
+import { useGlassStore, SHAPE_PRESETS } from '~/composables/useGlassStore'
 
 const { sheet, editTarget, addPart, updatePart } = useGlassStore()
 
 const cardRef = ref<HTMLElement | null>(null)
 const error = ref('')
+const shapeType = ref<'rectangle' | 'polygon'>('rectangle')
 
 const form = reactive({
   label: '',
   width: null as number | null,
   height: null as number | null,
   quantity: 1,
+  points: [] as { x: number; y: number }[],
 })
+
+function setShapeType(type: 'rectangle' | 'polygon') {
+  shapeType.value = type
+  if (type === 'rectangle') form.points = []
+  error.value = ''
+}
+
+function applyShapePreset(pts: { x: number; y: number }[]) {
+  form.points = pts.map(p => ({ ...p }))
+}
+
+function isActivePreset(pts: { x: number; y: number }[]): boolean {
+  if (form.points.length !== pts.length) return false
+  return pts.every((p, i) => form.points[i]?.x === p.x && form.points[i]?.y === p.y)
+}
 
 // Populate form when another component sets editTarget
 watch(editTarget, (target) => {
@@ -106,8 +172,14 @@ watch(editTarget, (target) => {
     form.width = target.width
     form.height = target.height
     form.quantity = target.quantity
+    if (target.points && target.points.length > 0) {
+      shapeType.value = 'polygon'
+      form.points = target.points.map(p => ({ ...p }))
+    } else {
+      shapeType.value = 'rectangle'
+      form.points = []
+    }
     error.value = ''
-    // Scroll form into view smoothly
     nextTick(() => cardRef.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   } else {
     resetForm()
@@ -119,6 +191,8 @@ function resetForm() {
   form.width = null
   form.height = null
   form.quantity = 1
+  form.points = []
+  shapeType.value = 'rectangle'
   error.value = ''
 }
 
@@ -136,11 +210,15 @@ function validate(): boolean {
     return false
   }
 
+  if (shapeType.value === 'polygon' && form.points.length < 3) {
+    error.value = 'Нарисуйте фигуру — нужно не менее 3 вершин'
+    return false
+  }
+
   const sw = sheet.value.width
   const sh = sheet.value.height
 
   if (w > sw || h > sh) {
-    // Check if rotating helps
     const rotatedFits = h <= sw && w <= sh
     if (rotatedFits) {
       error.value = `Деталь ${w}×${h} не влезает, но повёрнутая ${h}×${w} — влезет. Поменяйте ширину и высоту местами.`
@@ -162,6 +240,9 @@ function submit() {
     width: Number(form.width),
     height: Number(form.height),
     quantity: Number(form.quantity),
+    points: shapeType.value === 'polygon' && form.points.length >= 3
+      ? form.points.map(p => ({ ...p }))
+      : undefined,
   }
 
   if (editTarget.value) {
@@ -187,6 +268,95 @@ function inc() {
 </script>
 
 <style scoped>
+/* Shape type toggle */
+.shape-toggle {
+  display: flex;
+  border: 1.5px solid #E2E8F0;
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+
+.shape-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  border: none;
+  background: #F8FAFC;
+  color: #64748B;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.shape-btn:first-child {
+  border-right: 1.5px solid #E2E8F0;
+}
+
+.shape-btn.active {
+  background: #EFF6FF;
+  color: #2563EB;
+}
+
+/* Shape presets */
+.presets-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #94A3B8;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 7px;
+}
+
+.shape-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.preset-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 20px;
+  border: 1.5px solid #E2E8F0;
+  background: #F8FAFC;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.preset-chip:hover {
+  border-color: #93C5FD;
+  background: #EFF6FF;
+  color: #2563EB;
+}
+
+.preset-chip.active {
+  border-color: #2563EB;
+  background: #EFF6FF;
+  color: #2563EB;
+}
+
+.preset-icon {
+  font-size: 13px;
+}
+
+/* Field hint */
+.field-hint {
+  font-size: 11px;
+  color: #94A3B8;
+  margin-top: 6px;
+  margin-bottom: 4px;
+  line-height: 1.4;
+}
+
+/* existing styles */
 .field {
   margin-bottom: 12px;
 }

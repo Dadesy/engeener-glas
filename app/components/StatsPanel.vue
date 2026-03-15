@@ -1,7 +1,7 @@
 <template>
   <div class="stats-wrap">
 
-    <!-- Row 1: three area cards -->
+    <!-- Row 1: stats tiles -->
     <div class="stats-row">
       <div class="stat">
         <span class="stat-icon">📐</span>
@@ -22,6 +22,17 @@
         <span class="stat-label">Остаток</span>
         <span class="stat-val">{{ fmt(sheetRemainder) }}</span>
         <span class="stat-unit">мм²</span>
+      </div>
+    </div>
+
+    <!-- Multi-sheet badge -->
+    <div v-if="sheetsCount > 1" class="sheets-info-card">
+      <span class="sheets-info-icon">🗂️</span>
+      <div class="sheets-info-text">
+        <span class="sheets-info-count">{{ sheetsCount }} листа</span>
+        <span class="sheets-info-sub">
+          Итоговая площадь {{ fmt(totalSheetsArea) }} мм²
+        </span>
       </div>
     </div>
 
@@ -59,13 +70,15 @@
       </div>
     </div>
 
-    <!-- Row 3: area utilization -->
+    <!-- Row 3: area utilization (across all sheets) -->
     <div class="card util-card" :class="utilizationPct > 100 ? 'danger-card' : ''">
       <div class="util-header">
         <div>
-          <span class="util-label">Заполнение листа</span>
+          <span class="util-label">
+            Заполнение {{ sheetsCount > 1 ? sheetsCount + ' листов' : 'листа' }}
+          </span>
           <div class="util-sub">
-            размещено {{ fmt(placedArea) }} из {{ fmt(totalArea) }} мм²
+            размещено {{ fmt(placedArea) }} из {{ fmt(totalSheetsArea) }} мм²
           </div>
         </div>
         <span class="util-pct" :class="{ danger: utilizationPct > 100 }">
@@ -82,7 +95,6 @@
         />
       </div>
 
-      <!-- Requested vs sheet warning -->
       <div v-if="remainderArea < 0" class="overflow-warn">
         ⚠️ Суммарная площадь деталей превышает лист на {{ fmt(Math.abs(remainderArea)) }} мм²
       </div>
@@ -96,6 +108,8 @@ import { useGlassStore } from '~/composables/useGlassStore'
 
 const {
   totalArea,
+  totalSheetsArea,
+  sheetsCount,
   partsArea,
   remainderArea,
   placedArea,
@@ -171,6 +185,39 @@ function fmt(n: number): string {
 .stat-unit {
   font-size: 10px;
   color: #CBD5E1;
+}
+
+/* ── Multi-sheet badge ────────────────────────────────── */
+.sheets-info-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #F0FDF4;
+  border: 1.5px solid #BBF7D0;
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+
+.sheets-info-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.sheets-info-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sheets-info-count {
+  font-size: 14px;
+  font-weight: 800;
+  color: #065F46;
+}
+
+.sheets-info-sub {
+  font-size: 11px;
+  color: #059669;
 }
 
 /* ── Pieces card ───────────────────────────────────────── */
